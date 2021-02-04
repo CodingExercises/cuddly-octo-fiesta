@@ -1,7 +1,7 @@
 # Create an ASP.NET Core application
 
 ## Task # 1:
-### Create an ASP.NET Core MVC. You may import use the following link to create a sample application or use an ASP.NET Core MVS application of your choice.
+### Create an ASP.NET Core MVC. You may import use the following link to create a sample application or use an ASP.NET Core MVC application of your choice.
     https://docs.microsoft.com/en-us/aspnet/core/getting-started/?view=aspnetcore-5.0&tabs=windows
 
 ## Task # 2:
