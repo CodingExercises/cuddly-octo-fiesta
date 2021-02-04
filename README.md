@@ -14,7 +14,7 @@
 
 3. Both of these pipelines should have at least the following 4 stages. Each stage should have the listed jobs.
 
-    Please note: Deployment should be based on Canary deployment pattern. You may decide to create additional stage(s), but not required.
+    Please note: You may decide to create additional stage(s) besides the required 4 stages.
 
         Build
             Restore
@@ -34,3 +34,5 @@
             Deploy to Azure
 
 All sensitive information should be stored in Azure DevOps variable groups and should be retrieved from their for configuration management.
+
+Bonus credit: Implement Canary deployment pattern to the Production deployment stage.
