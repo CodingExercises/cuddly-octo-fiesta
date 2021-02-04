@@ -4,8 +4,6 @@
 ### Create an ASP.NET Core MVC. You may import use the following link to create a sample application or use an ASP.NET Core MVS application of your choice.
     https://docs.microsoft.com/en-us/aspnet/core/getting-started/?view=aspnetcore-5.0&tabs=windows
 
-# Create Azure Pipeline
-
 ## Task # 2:
 Add the following to appsettings.json file, if not already there
 ```
@@ -13,9 +11,12 @@ Add the following to appsettings.json file, if not already there
     "DbConnection": ""
   }
 ```
+# Create ADO Variable Groups
 
 ## Task # 3:
 Add unique values to 'ConnectionString.DbConnection' variable in ADO variable groups for Dev, Stage and Production stages. Pick three GUID values for uniqueness.
+
+# Create Azure Pipeline
 
 ## Task # 4:
 1. Create Azure pipeline for the application using only powershell. Call this azure-pipeline-ps.yml
