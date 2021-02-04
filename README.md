@@ -47,3 +47,7 @@ Add unique values to 'ConnectionString.DbConnection' variable in ADO variable gr
 All sensitive information should be stored in Azure DevOps variable groups and should be retrieved from their respective groups for configuration management.
 
 Bonus credit: Implement Canary deployment pattern to the Production deployment stage.
+
+Please email back to us when you are ready to submit. Email: watchguardengaccountowner@motorolasolutions.com
+
+All the best!!!
