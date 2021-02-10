@@ -1,0 +1,55 @@
+# ASP.NET Core (.NET Framework)
+# Build and test ASP.NET Core projects targeting the full .NET Framework.
+# Add steps that publish symbols, save build artifacts, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+
+#The environment variable will match the subscription name.  This variable is ultimately mapped to a parameters file 
+# for the ARM deployment below
+parameters:
+    environment: ''
+    subscription: ''
+    buildConfiguration: ''
+    appServicePlan: ''
+    resourceGroup: ''
+    resourceManagerConnection: ''
+    resourceLocation: ''    
+    webAppNameSC: ''
+    webAppNameE2: ''
+    DbConnection: ''
+
+stages:
+- stage: deploy_${{parameters.environment}}
+  displayName: "Deploy to ${{parameters.environment}}"
+  dependsOn:
+  jobs:
+  - deployment: publish_apiserver
+    displayName: "Publish ApiServer"
+    environment: "{{parameters.environment}}"
+    dependsOn: 
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - download: current
+              artifact: 'deployment'
+            - task: AzurePowerShell@5
+              displayName: 'Deploying Azure Front Door'
+              inputs:
+                  azureSubscription: '${{parameters.resourceManagerConnection}}'
+                  ScriptPath: '$(Pipeline.Workspace)/deployment/deployment/arm-deploy.ps1'
+                  ScriptArguments: '-RG ${{parameter.resourceGroup}} -env ${{parameter.environment}} -path "$(Pipeline.Workspace)\deployment\deployment\" -deployname ${{parameter.applicationName}}'
+                  azurePowerShellVersion: LatestVersion
+            - task: AzurePowerShell@5
+              displayName: 'Deploying ASP Region1'
+              inputs:
+                  azureSubscription: '${{parameters.resourceManagerConnection}}'
+                  ScriptPath: '$(Pipeline.Workspace)/deployment/deployment/webapp-publish.ps1'
+                  ScriptArguments: '-webappname ${{parameter.webAppNameSC}} -resourcegroup ${{parameter.resourcegroup}} -location ${{parameter.resourceLocation}} -appServicePlan ${{parameter.appServicePlan}} -filepath "$(Pipeline.Workspace)/deployment/${{parameter.buildConfiguration}}/*.zip"'
+                  azurePowerShellVersion: LatestVersion
+            - task: AzurePowerShell@5
+              displayName: 'Deploying ASP Region2'
+              inputs:
+                  azureSubscription: '${{parameters.resourceManagerConnection}}'
+                  ScriptPath: '$(Pipeline.Workspace)/deployment/deployment/webapp-publish.ps1'
+                  ScriptArguments: '-webappname ${{parameter.webAppNameSC}} -resourcegroup ${{parameter.resourcegroup}} -location ${{parameter.resourceLocation}} -appServicePlan ${{parameter.appServicePlan}} -filepath "$(Pipeline.Workspace)/deployment/${{parameter.buildConfiguration}}/*.zip"'
+                  azurePowerShellVersion: LatestVersion

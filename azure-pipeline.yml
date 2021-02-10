@@ -1,0 +1,240 @@
+# ASP.NET Core (.NET Framework)
+# Build and test ASP.NET Core projects targeting the full .NET Framework.
+# Add steps that publish symbols, save build artifacts, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+trigger:
+  branches:
+    exclude:
+      - master
+      - Feature/*
+      - HotFix/*
+
+pool: 'On Premises'
+
+
+stages:
+- stage: build_domain_artifacts
+  displayName: 'Build and pack the domain artifacts'
+  jobs:
+  - job: Package
+    steps:
+
+    - task: GitVersion@5
+      displayName: 'GitVersion'
+      inputs:
+        updateAssemblyInfo: true
+        configFilePath: 'GitVersion.yml'
+      enabled: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore Nuget Packages'
+      inputs:
+        command: 'restore'
+        projects: |
+          **/*.csproj
+        feedsToUse: 'select'
+        vstsFeed: ''
+      enabled: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Execute Unit Tests'
+      inputs:
+        command: 'test'
+        projects: |
+          **/*[Tt]ests/*[Uu]nit*/*.csproj
+        arguments: '--configuration $(BuildConfiguration)'
+      enabled: false
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Build Release' 
+      inputs:
+        command: 'build'
+        projects: 'src/**/*.csproj'
+        arguments: '--configuration Release -p:Version=$(GitVersion.MajorMinorPatch)'
+      enabled: true
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Create and Copy Release Zip'
+      inputs:
+        projects: 'src/**/*.csproj'
+        command: publish
+        publishWebProjects: false
+        arguments: '--configuration Release --output $(build.artifactstagingdirectory)/release'
+        zipAfterPublish: true    
+      enabled: true
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Deployment Artifacts'
+      inputs:
+        targetPath: '$(build.artifactstagingdirectory)/deployment'
+        artifact: 'deployment'
+      enabled: true
+
+- stage: deploy
+  displayName: "Deploy"
+  dependsOn:
+  jobs:
+  - job: dev
+    variables:
+     ConnectionStrings.DbConnection: '$(DbConnection)'
+    steps:
+      - download: current
+        artifact: 'deployment'
+      - task: AzureResourceManagerTemplateDeployment@3
+        displayName: 'ARM Template deployment: Azure Front Door'
+        inputs:
+            azureResourceManagerConnection: '$(resourceManagerConnection)'
+            subscriptionId: '$(subscriptionid)'
+            resourceGroupName: '$(rgname)'
+            location: '$(location)'
+            csmFile: '$(Pipeline.Workspace)/deployment/deployment/template.json'
+            csmParametersFile: '$(Pipeline.Workspace)/deployment/deployment/parameters-dev.json'
+      - task: AzureRmWebAppDeployment@4
+        condition: ne('${{parameters.webAppNameSC}}', '')
+        displayName: 'Install to WestUS'
+        inputs:
+            ConnectionType: 'AzureRM'
+            azureSubscription: '$(resourceManagerConnection)'
+            appType: webApp
+            WebAppName: '$(webAppNameSC)'
+            enableCustomDeployment: true
+            package: '$(Pipeline.Workspace)/deployment/$(.buildConfiguration)/*.zip'
+            JSONFiles: '**/appsettings.json'
+            ExcludeFilesFromAppDataFlag: false
+            deploymentMethod: 'runFromPackage'
+      - task: AzureRmWebAppDeployment@4
+        condition: ne('$(webAppNameE2)', '')
+        displayName: 'Install to EastUS'
+        inputs:
+            ConnectionType: 'AzureRM'
+            azureSubscription: '$(resourceManagerConnection)'
+            appType: webApp
+            WebAppName: '$(webAppNameE2)'
+            enableCustomDeployment: true
+            package: '$(Pipeline.Workspace)/deployment/$(buildConfiguration)/*.zip'
+            AppSettings: '-ASPNETCORE_ENVIRONMENT "$(Environment)" -DbConnection "$(DbConnection)"'
+            ExcludeFilesFromAppDataFlag: false
+            deploymentMethod: 'runFromPackage'                    
+  
+  - job: stage
+    variables:
+     ConnectionStrings.DbConnection: '$(DbConnection)'
+    steps:
+      - download: current
+        artifact: 'deployment'
+      - task: AzureResourceManagerTemplateDeployment@3
+        displayName: 'ARM Template deployment: Azure Front Door'
+        inputs:
+            azureResourceManagerConnection: '$(resourceManagerConnection)'
+            subscriptionId: '$(subscriptionid)'
+            resourceGroupName: '$(rgname)'
+            location: '$(location)'
+            csmFile: '$(Pipeline.Workspace)/deployment/deployment/template.json'
+            csmParametersFile: '$(Pipeline.Workspace)/deployment/deployment/parameters-stage.json'
+      - task: AzureRmWebAppDeployment@4
+        condition: ne('$(webAppNameSC)', '')
+        displayName: 'Install to WestUS'
+        inputs:
+            ConnectionType: 'AzureRM'
+            azureSubscription: '$(resourceManagerConnection)'
+            appType: webApp
+            WebAppName: '$(webAppNameSC)'
+            enableCustomDeployment: true
+            package: '$(Pipeline.Workspace)/deployment/$(buildConfiguration)/*.zip'
+            JSONFiles: '**/appsettings.json'
+            ExcludeFilesFromAppDataFlag: false
+            deploymentMethod: 'runFromPackage'
+      - task: AzureRmWebAppDeployment@4
+        condition: ne('$(webAppNameE2)', '')
+        displayName: 'Install to EastUS'
+        inputs:
+            ConnectionType: 'AzureRM'
+            azureSubscription: '$(resourceManagerConnection)'
+            appType: webApp
+            WebAppName: '$(webAppNameE2)'
+            enableCustomDeployment: true
+            package: '$(Pipeline.Workspace)/deployment/$(buildConfiguration)/*.zip'
+            AppSettings: '-ASPNETCORE_ENVIRONMENT "$(Environment)" -DbConnection "$(ConnectionStrings.DbConnection)"'
+            ExcludeFilesFromAppDataFlag: false
+            deploymentMethod: 'runFromPackage'
+  
+  - job: prod
+    variables:
+     ConnectionStrings.DbConnection: '$(DbConnection)'
+    steps:
+      - download: current
+        artifact: 'deployment'
+      - task: AzureResourceManagerTemplateDeployment@3
+        displayName: 'ARM Template deployment: Azure Front Door'
+        inputs:
+            azureResourceManagerConnection: '$(resourceManagerConnection)'
+            subscriptionId: '$(subscriptionid)'
+            resourceGroupName: '$(rgname)'
+            location: '$(location)'
+            csmFile: '$(Pipeline.Workspace)/deployment/deployment/template.json'
+            csmParametersFile: '$(Pipeline.Workspace)/deployment/deployment/parameters-prod.json'
+      - task: AzureRmWebAppDeployment@4
+        condition: ne('$(webAppNameSC)', '')
+        displayName: 'Install to WestUS'
+        inputs:
+            ConnectionType: 'AzureRM'
+            azureSubscription: '$(resourceManagerConnection)'
+            appType: webApp
+            WebAppName: '$(webAppNameSC)'
+            enableCustomDeployment: true
+            package: '$(Pipeline.Workspace)/deployment/$(buildConfiguration)/*.zip'
+            JSONFiles: '**/appsettings.json'
+            ExcludeFilesFromAppDataFlag: false
+            deploymentMethod: 'runFromPackage'
+      - task: AzureRmWebAppDeployment@4
+        condition: ne('$(webAppNameE2)', '')
+        displayName: 'Install to EastUS'
+        inputs:
+            ConnectionType: 'AzureRM'
+            azureSubscription: '$(resourceManagerConnection)'
+            appType: webApp
+            WebAppName: '$(webAppNameE2)'
+            enableCustomDeployment: true
+            package: '$(Pipeline.Workspace)/deployment/$(buildConfiguration)/*.zip'
+            AppSettings: '-ASPNETCORE_ENVIRONMENT "$(Environment)" -DbConnection "$(ConnectionStrings.DbConnection)"'
+            ExcludeFilesFromAppDataFlag: false
+            deploymentMethod: 'runFromPackage'
+# - template: deploy.template.yml
+#   parameters:
+#     environment: 'dev'
+#     subscription: ''
+#     buildConfiguration: ''
+#     enterpriseResourceGroup: ''
+#     domainResourceGroup: ''
+#     resourceManagerConnection: ''
+#     resourceLocation: ''    
+#     WebAppNameSC: ''
+#     WebAppNameE2: ''
+#     webAppName: ''
+#     DbConnection: '$(connectionstring)'
+
+# - template: deploy.template.yml
+#   parameters:
+#     environment: 'stage'
+#     subscription: ''
+#     buildConfiguration: ''
+#     enterpriseResourceGroup: ''
+#     domainResourceGroup: ''
+#     resourceManagerConnection: ''
+#     resourceLocation: ''    
+#     WebAppNameSC: ''
+#     WebAppNameE2: ''
+#     DbConnection: '$(connectionstring)'
+
+# - template: deploy.template.yml
+#   parameters:
+#     environment: 'prod'
+#     subscription: ''
+#     buildConfiguration: ''
+#     enterpriseResourceGroup: ''
+#     domainResourceGroup: ''
+#     resourceManagerConnection: ''
+#     resourceLocation: ''    
+#     WebAppNameSC: ''
+#     WebAppNameE2: ''
+#     DbConnection: '$(connectionstring)'

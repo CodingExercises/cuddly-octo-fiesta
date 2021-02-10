@@ -1,0 +1,60 @@
+# ASP.NET Core (.NET Framework)
+# Build and test ASP.NET Core projects targeting the full .NET Framework.
+# Add steps that publish symbols, save build artifacts, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+
+#The environment variable will match the subscription name.  This variable is ultimately mapped to a parameters file 
+# for the ARM deployment below
+parameters:
+    environment: ''
+    subscription: ''
+    buildConfiguration: ''
+    enterpriseResourceGroup: ''
+    domainResourceGroup: ''
+    resourceManagerConnection: ''
+    resourceLocation: ''    
+    webAppNameSC: ''
+    webAppNameE2: ''
+    DbConnection: ''
+
+stages:
+- stage: deploy_${{parameters.environment}}
+  displayName: "Deploy to ${{parameters.environment}}"
+  dependsOn:
+  jobs:
+  - deployment: publish_apiserver
+    displayName: "Publish ApiServer"
+    environment: "{{parameters.environment}}"
+    dependsOn: 
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - download: current
+              artifact: 'deployment'
+            - task: AzureRmWebAppDeployment@4
+              condition: ne('${{parameters.webAppNameSC}}', '')
+              displayName: 'Install to WestUS'
+              inputs:
+                ConnectionType: 'AzureRM'
+                azureSubscription: '${{parameters.resourceManagerConnection}}'
+                appType: webApp
+                WebAppName: '${{parameters.webAppNameSC}}'
+                enableCustomDeployment: true
+                package: '$(Pipeline.Workspace)/deployment/${{parameters.buildConfiguration}}/*.zip'
+                AppSettings: '-ASPNETCORE_ENVIRONMENT "${{parameters.apiServerEnvironment}}" -DbConnection "${{parameters.DbConnection}}"'
+                ExcludeFilesFromAppDataFlag: false
+                deploymentMethod: 'runFromPackage'
+            - task: AzureRmWebAppDeployment@4
+              condition: ne('${{parameters.webAppNameE2}}', '')
+              displayName: 'Install to EastUS'
+              inputs:
+                ConnectionType: 'AzureRM'
+                azureSubscription: '${{parameters.resourceManagerConnection}}'
+                appType: webApp
+                WebAppName: '${{parameters.webAppNameE2}}'
+                enableCustomDeployment: true
+                package: '$(Pipeline.Workspace)/deployment/${{parameters.buildConfiguration}}/*.zip'
+                AppSettings: '-ASPNETCORE_ENVIRONMENT "${{parameters.Environment}}" -DbConnection "${{parameters.DbConnection}}"'
+                ExcludeFilesFromAppDataFlag: false
+                deploymentMethod: 'runFromPackage'

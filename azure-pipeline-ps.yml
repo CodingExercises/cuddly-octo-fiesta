@@ -1,0 +1,195 @@
+# ASP.NET Core (.NET Framework)
+# Build and test ASP.NET Core projects targeting the full .NET Framework.
+# Add steps that publish symbols, save build artifacts, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+trigger:
+  branches:
+    exclude:
+      - master
+      - Feature/*
+      - HotFix/*
+
+pool: 'On Premises'
+
+
+stages:
+- stage: build_domain_artifacts
+  displayName: 'Build and pack the domain artifacts'
+  jobs:
+  - job: Package
+    steps:
+
+    - task: GitVersion@5
+      displayName: 'GitVersion'
+      inputs:
+        updateAssemblyInfo: true
+        configFilePath: 'GitVersion.yml'
+      enabled: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore Nuget Packages'
+      inputs:
+        command: 'restore'
+        projects: |
+          **/*.csproj
+        feedsToUse: 'select'
+        vstsFeed: ''
+      enabled: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Execute Unit Tests'
+      inputs:
+        command: 'test'
+        projects: |
+          **/*[Tt]ests/*[Uu]nit*/*.csproj
+        arguments: '--configuration $(BuildConfiguration)'
+      enabled: false
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Build Release' 
+      inputs:
+        command: 'build'
+        projects: 'src/**/*.csproj'
+        arguments: '--configuration Release -p:Version=$(GitVersion.MajorMinorPatch)'
+      enabled: true
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Create and Copy Release Zip'
+      inputs:
+        projects: 'src/**/*.csproj'
+        command: publish
+        publishWebProjects: false
+        arguments: '--configuration Release --output $(build.artifactstagingdirectory)/release'
+        zipAfterPublish: true    
+      enabled: true
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Deployment Artifacts'
+      inputs:
+        targetPath: '$(build.artifactstagingdirectory)/deployment'
+        artifact: 'deployment'
+      enabled: true
+
+- stage: deploy
+  displayName: "Deploy"
+  dependsOn:
+  jobs:
+  - job: dev
+    variables:
+     ConnectionStrings.DbConnection: '$(DbConnection)'
+    steps:
+      - download: current
+        artifact: 'deployment'
+      - task: AzurePowerShell@5
+        displayName: 'Deploying Azure Front Door'
+        inputs:
+          azureSubscription: '$(resourceManagerConnection)'
+          ScriptPath: '$(Pipeline.Workspace)/deployment/deployment/arm-deploy.ps1'
+          ScriptArguments: '-RG $(ResourceGroup) -env $(environment) -path "$(Pipeline.Workspace)\deployment\deployment\" -deployname "$(applicationName)"'
+          azurePowerShellVersion: LatestVersion
+      - task: AzurePowerShell@5
+        displayName: 'Deploying ASP Region1'
+        inputs:
+          azureSubscription: '$(resourceManagerConnection)'
+          ScriptPath: '$(Pipeline.Workspace)/deployment/deployment/webapp-publish.ps1'
+          ScriptArguments: '-webappname $(webAppNameSC) -resourcegroup $(resourcegroup) -location $(location) -appServicePlan $(appServicePlan) -filepath "$(Pipeline.Workspace)/deployment/$(buildConfiguration)/*.zip"'
+          azurePowerShellVersion: LatestVersion
+      - task: AzurePowerShell@5
+        displayName: 'Deploying ASP Region2'
+        inputs:
+          azureSubscription: '$(resourceManagerConnectionrg2)'
+          ScriptPath: '$(Pipeline.Workspace)/deployment/deployment/webapp-publish.ps1'
+          ScriptArguments: '-webappname $(webAppNameE2) -resourcegroup $(resourcegroup) -location $(location) -appServicePlan $(appServicePlan) -filepath "$(Pipeline.Workspace)/deployment/$(buildConfiguration)/*.zip"'
+          azurePowerShellVersion: LatestVersion        
+  
+  - job: stage
+    variables:
+     ConnectionStrings.DbConnection: '$(DbConnection)'
+    steps:
+      - download: current
+        artifact: 'deployment'
+      - task: AzurePowerShell@5
+        displayName: 'Deploying Azure Front Door'
+        inputs:
+          azureSubscription: '$(resourceManagerConnection)'
+          ScriptPath: '$(Pipeline.Workspace)/deployment/deployment/arm-deploy.ps1'
+          ScriptArguments: '-RG $(ResourceGroup) -env $(environment) -path "$(Pipeline.Workspace)\deployment\deployment\" -deployname "$(applicationName)"'
+          azurePowerShellVersion: LatestVersion
+      - task: AzurePowerShell@5
+        displayName: 'Deploying ASP Region1'
+        inputs:
+          azureSubscription: '$(resourceManagerConnection)'
+          ScriptPath: '$(Pipeline.Workspace)/deployment/deployment/webapp-publish.ps1'
+          ScriptArguments: '-webappname $(webAppNameSC) -resourcegroup $(resourcegroup) -location $(location) -appServicePlan $(appServicePlan) -filepath "$(Pipeline.Workspace)/deployment/$(buildConfiguration)/*.zip"'
+          azurePowerShellVersion: LatestVersion
+      - task: AzurePowerShell@5
+        displayName: 'Deploying ASP Region2'
+        inputs:
+          azureSubscription: '$(resourceManagerConnectionrg2)'
+          ScriptPath: '$(Pipeline.Workspace)/deployment/deployment/webapp-publish.ps1'
+          ScriptArguments: '-webappname $(webAppNameE2) -resourcegroup $(resourcegroup) -location $(location) -appServicePlan $(appServicePlan) -filepath "$(Pipeline.Workspace)/deployment/$(buildConfiguration)/*.zip"'
+          azurePowerShellVersion: LatestVersion
+  
+  - job: prod
+    variables:
+     ConnectionStrings.DbConnection: '$(DbConnection)'
+    steps:
+      - task: AzurePowerShell@5
+        displayName: 'Deploying Azure Front Door'
+        inputs:
+          azureSubscription: '$(resourceManagerConnection)'
+          ScriptPath: '$(Pipeline.Workspace)/deployment/deployment/arm-deploy.ps1'
+          ScriptArguments: '-RG $(ResourceGroup) -env $(environment) -path "$(Pipeline.Workspace)\deployment\deployment\" -deployname "$(applicationName)"'
+          azurePowerShellVersion: LatestVersion
+      - task: AzurePowerShell@5
+        displayName: 'Deploying ASP Region1'
+        inputs:
+          azureSubscription: '$(resourceManagerConnection)'
+          ScriptPath: '$(Pipeline.Workspace)/deployment/deployment/webapp-publish.ps1'
+          ScriptArguments: '-webappname $(webAppNameSC) -resourcegroup $(resourcegroup) -location $(location) -appServicePlan $(appServicePlan) -filepath "$(Pipeline.Workspace)/deployment/$(buildConfiguration)/*.zip"'
+          azurePowerShellVersion: LatestVersion
+      - task: AzurePowerShell@5
+        displayName: 'Deploying ASP Region2'
+        inputs:
+          azureSubscription: '$(resourceManagerConnectionrg2)'
+          ScriptPath: '$(Pipeline.Workspace)/deployment/deployment/webapp-publish.ps1'
+          ScriptArguments: '-webappname $(webAppNameE2) -resourcegroup $(resourcegroup) -location $(location) -appServicePlan $(appServicePlan) -filepath "$(Pipeline.Workspace)/deployment/$(buildConfiguration)/*.zip"'
+          azurePowerShellVersion: LatestVersion
+# - template: deploy.template-ps.yml
+#   parameters:
+#     environment: 'dev'
+#    subscription: ''
+#    buildConfiguration: ''
+#    appServicePlan: ''
+#    resourceGroup: ''
+#    resourceManagerConnection: ''
+#    resourceLocation: ''    
+#    webAppNameSC: ''
+#    webAppNameE2: ''
+#    DbConnection: ''
+
+# - template: deploy.template-ps.yml
+#   parameters:
+#     environment: 'stage'
+#    subscription: ''
+#    buildConfiguration: ''
+#    appServicePlan: ''
+#    resourceGroup: ''
+#    resourceManagerConnection: ''
+#    resourceLocation: ''    
+#    webAppNameSC: ''
+#    webAppNameE2: ''
+#    DbConnection: ''
+
+# - template: deploy.template-ps.yml
+#   parameters:
+#     environment: 'prod'
+#    subscription: ''
+#    buildConfiguration: ''
+#    appServicePlan: ''
+#    resourceGroup: ''
+#    resourceManagerConnection: ''
+#    resourceLocation: ''    
+#    webAppNameSC: ''
+#    webAppNameE2: ''
+#    DbConnection: ''
